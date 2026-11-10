@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>قائمة الانتظار</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="w">
+  <h1 id="ttl"></h1>
+  <p class="s">سجّل في قائمة الانتظار وسنتواصل معك عند جاهزية طاولتك.</p>
+  <div class="c" id="box">
+    <label for="nm">الاسم</label><input id="nm" autocomplete="name">
+    <label for="ph">رقم الجوال</label><input id="ph" type="tel" inputmode="tel" placeholder="05XXXXXXXX" autocomplete="tel">
+    <label for="ct">عدد الأشخاص</label><input id="ct" type="number" inputmode="numeric" min="1" max="30" value="2">
+    <div class="err" id="er"></div>
+    <button class="b" id="go">تسجيل</button>
+  </div>
+</div>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getFirestore, collection, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { firebaseConfig, PLACE_NAME } from "./firebase-config.js";
+document.getElementById("ttl").textContent = PLACE_NAME;
+const db = getFirestore(initializeApp(firebaseConfig));
+const norm = p => { p = (p||"").replace(/[^\d]/g,"").replace(/^00/,""); if (/^05\d{8}$/.test(p)) p = "966"+p.slice(1); return p; };
+const $ = id => document.getElementById(id);
+$("go").onclick = async () => {
+  const name = $("nm").value.trim(), phone = norm($("ph").value), count = parseInt($("ct").value,10);
+  if (!name) return $("er").textContent = "اكتب الاسم";
+  if (phone.length < 9 || phone.length > 15) return $("er").textContent = "رقم الجوال غير صحيح";
+  if (!count || count < 1 || count > 30) return $("er").textContent = "اكتب عدد الأشخاص (من 1 إلى 30)";
+  $("er").textContent = ""; $("go").disabled = true;
+  try {
+    await addDoc(collection(db,"waitlist"), { name: name.slice(0,60), phone, count, createdAt: serverTimestamp() });
+    $("box").innerHTML = '<div class="ok"><div class="big">✅</div><h2>تم تسجيلك</h2><p class="s">سنتواصل معك على جوالك عندما تكون طاولتك جاهزة.</p></div>';
+  } catch (e) {
+    $("er").textContent = "تعذّر التسجيل. تأكد من الاتصال وحاول مرة ثانية.";
+    $("go").disabled = false;
+  }
+};
+</script>
+</body>
+</html>

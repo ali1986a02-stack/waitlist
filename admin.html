@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>لوحة الانتظار</title>
+<link rel="stylesheet" href="style.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+</head>
+<body>
+<div class="w" id="app"></div>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { getFirestore, collection, query, orderBy, onSnapshot, deleteDoc, doc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { firebaseConfig } from "./firebase-config.js";
+const app = initializeApp(firebaseConfig), auth = getAuth(app), db = getFirestore(app);
+const root = document.getElementById("app");
+const esc = s => { const d = document.createElement("div"); d.textContent = s; return d.innerHTML; };
+let unsub = null, first = true, items = [];
+
+function loginView() {
+  if (unsub) { unsub(); unsub = null; }
+  root.innerHTML = '<h1>دخول صاحب المحل</h1><div class="c"><label for="em">البريد الإلكتروني</label><input id="em" type="email" autocomplete="username">' +
+    '<label for="pw">الرقم السري</label><input id="pw" type="password" autocomplete="current-password"><div class="err" id="er"></div>' +
+    '<button class="b" id="in">دخول</button></div>';
+  document.getElementById("in").onclick = async () => {
+    try { await signInWithEmailAndPassword(auth, document.getElementById("em").value.trim(), document.getElementById("pw").value); }
+    catch (e) { document.getElementById("er").textContent = "البريد أو الرقم السري غير صحيح"; }
+  };
+}
+
+function render() {
+  const h = ['<div class="row" style="justify-content:space-between"><h1>قائمة الانتظار (' + items.length + ')</h1><button class="b o" id="out" style="width:auto;margin:0;padding:8px 12px;font-size:14px">خروج</button></div>'];
+  if (!items.length) h.push('<p class="s">لا يوجد زبائن في الانتظار الآن.</p>');
+  items.forEach((e, i) => {
+    const mins = e.createdAt ? Math.max(0, Math.round((Date.now() - e.createdAt.toMillis()) / 60000)) : 0;
+    const wa = "https://wa.me/" + e.phone + "?text=" + encodeURIComponent("أهلاً " + e.name + "، طاولتك جاهزة الآن 🌟");
+    h.push('<div class="c"><div class="row"><span class="n">' + (i + 1) + '</span><div><b>' + esc(e.name) + '</b><div class="m">' + e.count + ' أشخاص، ينتظر منذ ' + mins + ' دقيقة</div></div></div>' +
+      '<div class="m" dir="ltr" style="text-align:right;margin-top:6px">+' + esc(e.phone) + '</div>' +
+      '<div class="a"><a class="b" href="' + wa + '" target="_blank" rel="noopener">واتساب</a><a class="b o" href="tel:+' + e.phone + '">اتصال</a><button class="b o" data-d="' + e.id + '">تم</button></div></div>');
+  });
+  h.push('<div class="c"><details><summary>باركود الزبائن</summary><div id="qr"></div><p class="m">اطبعه وعلّقه خارج المحل.</p></details></div>');
+  root.innerHTML = h.join("");
+  document.getElementById("out").onclick = () => signOut(auth);
+  root.querySelectorAll("[data-d]").forEach(b => b.onclick = () => deleteDoc(doc(db, "waitlist", b.dataset.d)));
+  try {
+    const link = location.origin + location.pathname.replace(/[^\/]*$/, "");
+    const q = qrcode(0, "M"); q.addData(link); q.make();
+    const el = document.getElementById("qr"); el.innerHTML = q.createSvgTag({ cellSize: 6, margin: 0, scalable: true });
+    const s = el.querySelector("svg"); if (s) { s.style.width = "240px"; s.style.height = "240px"; }
+  } catch (e) {}
+}
+
+function beep() {
+  try { const c = new (window.AudioContext || window.webkitAudioContext)(), o = c.createOscillator(); o.connect(c.destination); o.frequency.value = 880; o.start(); o.stop(c.currentTime + 0.2); } catch (e) {}
+}
+
+onAuthStateChanged(auth, user => {
+  if (!user) return loginView();
+  unsub = onSnapshot(query(collection(db, "waitlist"), orderBy("createdAt")), snap => {
+    if (!first && snap.docChanges().some(c => c.type === "added" && !c.doc.metadata.hasPendingWrites)) beep();
+    first = false;
+    items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    render();
+  }, () => { root.innerHTML = '<p class="err">لا يمكن قراءة القائمة. تأكد أن قواعد Firestore منشورة.</p>'; });
+});
+setInterval(() => { if (auth.currentUser && items.length) render(); }, 60000);
+</script>
+</body>
+</html>
