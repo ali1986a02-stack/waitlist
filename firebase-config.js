@@ -6,4 +6,4 @@ export const firebaseConfig = {
   messagingSenderId: "979915833275",
   appId: "1:979915833275:web:9a4951db5a74af319d4e9e"
 };
-export const PLACE_NAME = "مرحباً بكم";
+export const PLACE_NAME = "FŇH";
