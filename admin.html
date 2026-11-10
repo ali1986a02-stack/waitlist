@@ -37,9 +37,17 @@ const GRACE = 5 * 60 * 1000;
 const isDone = e => e.status === "done" || e.status === "cancelled";
 const label = e => e.status === "cancelled" ? "ملغي (تأخر)" : "تمت خدمته";
 const cancelling = new Set();
+let warned = false;
+function save(id, data) {
+  return updateDoc(doc(db, "waitlist", id), data).catch(err => {
+    console.error(err);
+    if (!warned) { warned = true; alert("تعذّر حفظ التغيير. تأكد أن قواعد Firebase تسمح بالتعديل (allow update: if request.auth != null) ثم اضغط Publish.\n\n" + (err && err.code ? err.code : "")); setTimeout(() => warned = false, 15000); }
+    throw err;
+  });
+}
 function cancelBooking(id) {
   if (cancelling.has(id)) return; cancelling.add(id);
-  return updateDoc(doc(db, "waitlist", id), { status: "cancelled", doneAt: serverTimestamp() }).catch(() => cancelling.delete(id));
+  return save(id, { status: "cancelled", doneAt: serverTimestamp() }).catch(() => setTimeout(() => cancelling.delete(id), 20000));
 }
 function mmss(ms) { const s = Math.max(0, Math.ceil(ms / 1000)); return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0"); }
 function tick() {
@@ -67,7 +75,7 @@ function render() {
   if (!waiting.length) h.push('<p class="s">لا يوجد زبائن في الانتظار الآن.</p>');
   waiting.forEach((e, i) => {
     const mins = e.createdAt ? Math.max(0, Math.round((Date.now() - e.createdAt.toMillis()) / 60000)) : 0;
-    const msg = e.calledAt ? "أهلاً " + e.name + "، طاولتك جاهزة الآن 🌟 عندك 5 دقائق للحضور وإلا يُلغى الحجز." : "أهلاً " + e.name + "، طاولتك جاهزة الآن 🌟 عندك 5 دقائق للحضور وإلا يُلغى الحجز.";
+    const msg = "أهلاً " + e.name + "، طاولتك جاهزة الآن ☕\nفي حال التأخر 5 دقائق سيتم إلغاء الحجز تلقائياً 🌟";
     const wa = "https://wa.me/" + e.phone + "?text=" + encodeURIComponent(msg);
     const btns = e.calledAt
       ? '<a class="b" href="' + wa + '" target="_blank" rel="noopener">إعادة الإرسال</a><a class="b o" href="tel:+' + e.phone + '">اتصال</a><button class="b o" data-d="' + e.id + '">حضر</button><button class="b o" data-x="' + e.id + '">إلغاء الحجز</button>'
@@ -89,9 +97,9 @@ function render() {
   root.innerHTML = h.join("");
   document.getElementById("out").onclick = () => signOut(auth);
   document.getElementById("csv").onclick = exportCsv;
-  root.querySelectorAll("[data-d]").forEach(b => b.onclick = () => updateDoc(doc(db, "waitlist", b.dataset.d), { status: "done", doneAt: serverTimestamp() }));
+  root.querySelectorAll("[data-d]").forEach(b => b.onclick = () => save(b.dataset.d, { status: "done", doneAt: serverTimestamp() }).catch(() => {}));
   root.querySelectorAll("[data-x]").forEach(b => b.onclick = () => { if (confirm("إلغاء هذا الحجز؟")) cancelBooking(b.dataset.x); });
-  root.querySelectorAll("[data-c]").forEach(a => a.onclick = () => { updateDoc(doc(db, "waitlist", a.dataset.c), { calledAt: Date.now() }); });
+  root.querySelectorAll("[data-c]").forEach(a => a.onclick = () => { save(a.dataset.c, { calledAt: Date.now() }).catch(() => {}); });
   try {
     const link = location.origin + location.pathname.replace(/[^\\/]*$/, "");
     const q = qrcode(0, "M"); q.addData(link); q.make();
